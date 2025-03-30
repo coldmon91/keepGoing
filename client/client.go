@@ -17,7 +17,7 @@ func ClientMain(monitor core.Monitor) {
 			x, y := robotgo.Location()
 			keepGoing := core.DetectKeepGoing(x, y, &monitor)
 			if keepGoing {
-
+				monitor.PeerConn.Write([]byte("keepGoing"))
 			}
 		}
 	}()

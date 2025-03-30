@@ -139,7 +139,8 @@ func CaptureMouse(monitor Monitor, stopChan <-chan bool) {
 			readMsg := make([]byte, BufferSize)
 			hookChannel := make(chan []byte)
 			go startHooking(hookChannel)
-			go func() {
+			keepGoingChan := make(chan bool)
+			go func() { // waitting for message from client
 				for {
 					// receive message from client
 					r, err := monitor.PeerConn.Read(readMsg)
@@ -152,10 +153,14 @@ func CaptureMouse(monitor Monitor, stopChan <-chan bool) {
 						return
 					}
 					fmt.Printf("[server] %d bytes 읽음\n", r)
-					//
+					if string(readMsg) == "keepGoing" {
+						fmt.Println("keepGoing from client")
+						keepGoingChan <- true
+						return
+					}
 				}
 			}()
-			for {
+			for keepGoing {
 				select {
 				case msg := <-hookChannel:
 					_, err := monitor.PeerConn.Write(msg)
@@ -163,6 +168,9 @@ func CaptureMouse(monitor Monitor, stopChan <-chan bool) {
 						fmt.Println("메시지 전송 오류:", err)
 						return
 					}
+				case <-keepGoingChan:
+					keepGoing = false
+					fmt.Println("keepGoing from client")
 				case <-stopChan:
 					fmt.Println("stopChan 수신")
 					return
