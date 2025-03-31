@@ -14,7 +14,7 @@ import (
 
 const BufferSize = 1024
 
-var PollingRate = 50 * time.Millisecond
+var PollingRate = 500 * time.Millisecond
 
 type PeerScreenLocation int
 
@@ -38,24 +38,47 @@ type (
 		Settings *Settings
 		MouseObj MouseObject
 		PeerConn net.Conn
+		Displays []DisplayInfo `json:"displays"`
 	}
 
 	Settings struct {
 		Mode          string             `json:"mode"`
-		ScreenSize    Vec2               `json:"screen_size"`
 		PeerScreenLoc PeerScreenLocation `json:"peer_screen_loc"`
 	}
 )
 
 func (s *Settings) String() string {
-	return fmt.Sprintf("Mode: %s, ScreenSize: (%d, %d), PeerScreenLoc: %d", s.Mode, s.ScreenSize.X, s.ScreenSize.Y, s.PeerScreenLoc)
+	return fmt.Sprintf("Mode: %s, ScreenLoc: %d", s.Mode, s.PeerScreenLoc)
 }
 
-func DetectKeepGoing(x, y int, monitor *Monitor) bool {
+func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor) bool {
+	totalWidth := 0
+	totalHeight := 0
+	if monitor.Settings.PeerScreenLoc == Left || monitor.Settings.PeerScreenLoc == Right {
+		for _, display := range monitor.Displays {
+			totalWidth += display.W
+		}
+	} else if monitor.Settings.PeerScreenLoc == Top || monitor.Settings.PeerScreenLoc == Bottom {
+		for _, display := range monitor.Displays {
+			totalHeight += display.H
+		}
+	}
+
 	settings := monitor.Settings
 	mouseObj := monitor.MouseObj
+	workDisplayNum := 0
+	for _, display := range monitor.Displays {
+		if x >= display.Min.X && x <= display.Min.X+display.W &&
+			y >= display.Min.Y && y <= display.Min.Y+display.H {
+			fmt.Printf("디스플레이 #%d 범위 내에 있습니다: %d, %d\n", display.Id, x, y)
+			workDisplayNum = display.Id
+		}
+	}
+
+	screenSize := monitor.Displays[workDisplayNum]
+
 	if settings.PeerScreenLoc == Right {
-		if x == (settings.ScreenSize.X - 1) {
+		if x == (totalWidth - 1) {
 			if mouseObj.PreviousMousePos.X < x {
 				fmt.Printf("마우스가 오른쪽 끝에 도달했습니다: %d, %d\n", x, y)
 				return true
@@ -76,7 +99,7 @@ func DetectKeepGoing(x, y int, monitor *Monitor) bool {
 			}
 		}
 	} else if settings.PeerScreenLoc == Bottom {
-		if y == (settings.ScreenSize.Y - 1) {
+		if y == (screenSize.H - 1) {
 			if mouseObj.PreviousMousePos.Y < y {
 				fmt.Printf("마우스가 아래쪽 끝에 도달했습니다: %d, %d\n", x, y)
 				return true
@@ -87,7 +110,16 @@ func DetectKeepGoing(x, y int, monitor *Monitor) bool {
 }
 
 func startHooking(hookChannel chan []byte) {
+	x, y := robotgo.Location()
+	prevMousePos := Vec2{X: int(x), Y: int(y)}
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
+		if prevMousePos.X != int(e.X) || prevMousePos.Y != int(e.Y) {
+			// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
+			deltaX := e.X - int16(prevMousePos.X)
+			deltaY := e.Y - int16(prevMousePos.Y)
+			e.X = deltaX
+			e.Y = deltaY
+		}
 		// e.Kind == MouseMove == 9
 		// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
 		data, err := json.Marshal(e)
@@ -106,6 +138,8 @@ func startHooking(hookChannel chan []byte) {
 			return
 		}
 		hookChannel <- bytesBuffer.Bytes()
+		prevMousePos.X = int(e.X)
+		prevMousePos.Y = int(e.Y)
 	})
 	hook.Register(hook.KeyDown, []string{}, func(e hook.Event) {
 		data, err := json.Marshal(e)
@@ -129,10 +163,12 @@ func startHooking(hookChannel chan []byte) {
 	<-hook.Process(s)
 }
 
-func CaptureMouse(monitor Monitor, stopChan <-chan bool) {
+func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
+
 	for {
 		x, y := robotgo.Location()
-		keepGoing := DetectKeepGoing(x, y, &monitor)
+		fmt.Printf("마우스 위치: %d, %d\n", x, y)
+		keepGoing := DetectKeepGoing(x, y, monitor)
 		if keepGoing {
 			fmt.Printf("keepGoing\n")
 			// start hooking

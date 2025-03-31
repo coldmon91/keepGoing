@@ -11,11 +11,11 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-func ClientMain(monitor core.Monitor) {
+func ClientMain(monitor *core.Monitor) {
 	go func() {
 		for {
 			x, y := robotgo.Location()
-			keepGoing := core.DetectKeepGoing(x, y, &monitor)
+			keepGoing := core.DetectKeepGoing(x, y, monitor)
 			if keepGoing {
 				monitor.PeerConn.Write([]byte("keepGoing"))
 			}
@@ -24,10 +24,12 @@ func ClientMain(monitor core.Monitor) {
 	eventsPolling(monitor)
 }
 
-func eventsPolling(monitor core.Monitor) {
+func eventsPolling(monitor *core.Monitor) {
 	fmt.Printf("Polling events on %s\n", monitor.Settings.Mode)
 	readBuffer := make([]byte, core.BufferSize)
 	event := &hook.Event{}
+	x, y := robotgo.Location()
+	prevMousePos := core.Vec2{X: int(x), Y: int(y)}
 	for {
 		r, err := monitor.PeerConn.Read(readBuffer)
 		if err != nil {
@@ -51,15 +53,29 @@ func eventsPolling(monitor core.Monitor) {
 			fmt.Println("Error unmarshalling event:", err)
 			continue
 		}
-		procHookedEvent(event)
+		procHookedEvent(event, &prevMousePos)
 	}
 }
 
-func procHookedEvent(event *hook.Event) {
+func procHookedEvent(event *hook.Event, prevMousePos *core.Vec2) {
 	switch event.Kind {
 	case hook.MouseMove:
 		fmt.Printf("Mouse moved to: %d, %d\n", event.X, event.Y)
-		robotgo.Move(int(event.X), int(event.Y))
+		x := 0
+		if event.X > 0 {
+			x = prevMousePos.X + int(event.X)
+		} else {
+			x = prevMousePos.X - int(event.X)
+		}
+		y := 0
+		if event.Y > 0 {
+			y = prevMousePos.Y + int(event.Y)
+		} else {
+			y = prevMousePos.Y - int(event.Y)
+		}
+		robotgo.Move(int(x), int(y))
+		prevMousePos.X = int(x)
+		prevMousePos.Y = int(y)
 	case hook.MouseDown:
 		fmt.Printf("Mouse button %d pressed at: %d, %d\n", event.Button, event.X, event.Y)
 		robotgo.MouseDown(event.Button)

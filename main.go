@@ -8,11 +8,11 @@ import (
 	"net"
 	"os"
 	"time"
-
-	"github.com/go-vgo/robotgo"
 )
 
 func main() {
+	displays := core.GetScreenSizes()
+
 	args := os.Args
 	mode := "server"
 	if len(args) > 1 {
@@ -22,32 +22,27 @@ func main() {
 
 	settings := &core.Settings{}
 	settings.Mode = mode
-	settings.ScreenSize.X = screenX
-	settings.ScreenSize.Y = screenY
 	settings.PeerScreenLoc = core.Right // TODO: get from user
 
-	stopChan := StartCapture(mode, settings)
+	myMonitor := core.Monitor{
+		Settings: settings,
+		Displays: displays,
+		MouseObj: core.MouseObject{},
+	}
 
-	time.Sleep(5 * time.Second)
+	stopChan := StartCapture(mode, &myMonitor)
+
+	time.Sleep(60 * time.Second)
 	core.StopCapture(stopChan)
 }
 
-var screenX, screenY int = robotgo.GetScreenSize()
-
-func StartCapture(mode string, settings *core.Settings) (stopChan chan bool) {
+func StartCapture(mode string, myMonitor *core.Monitor) (stopChan chan bool) {
 	port := 50310
 	peerIP := "127.0.0.1"
 	peerAddress := fmt.Sprintf("%s:%d", peerIP, port)
 	stopChan = make(chan bool)
-
-	fmt.Printf("화면 크기: %d, %d\n", screenX, screenY)
-
-	myMonitor := core.Monitor{
-		Settings: settings,
-		MouseObj: core.MouseObject{},
-	}
 	var conn net.Conn
-	if settings.Mode == "server" {
+	if myMonitor.Settings.Mode == "server" {
 		conn = tcpListen(port)
 		if conn == nil {
 			fmt.Println("서버 연결 오류")
@@ -65,7 +60,7 @@ func StartCapture(mode string, settings *core.Settings) (stopChan chan bool) {
 		fmt.Println("키보드와 마우스 캡처를 시작합니다...")
 		fmt.Printf("서버 설정: %s\n", myMonitor.Settings.String())
 		go core.CaptureMouse(myMonitor, stopChan)
-	} else if settings.Mode == "client" {
+	} else if myMonitor.Settings.Mode == "client" {
 		conn = tcpConnect(peerAddress)
 		if conn == nil {
 			fmt.Println("서버 연결 오류")
