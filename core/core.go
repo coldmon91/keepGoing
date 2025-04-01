@@ -51,30 +51,10 @@ func (s *Settings) String() string {
 	return fmt.Sprintf("Mode: %s, ScreenLoc: %d", s.Mode, s.PeerScreenLoc)
 }
 
-func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor) bool {
-	totalWidth := 0
-	totalHeight := 0
-	if monitor.Settings.PeerScreenLoc == Left || monitor.Settings.PeerScreenLoc == Right {
-		for _, display := range monitor.Displays {
-			totalWidth += display.W
-		}
-	} else if monitor.Settings.PeerScreenLoc == Top || monitor.Settings.PeerScreenLoc == Bottom {
-		for _, display := range monitor.Displays {
-			totalHeight += display.H
-		}
-	}
+func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, totalHeight, workDisplayNum int) bool {
 
 	settings := monitor.Settings
 	mouseObj := monitor.MouseObj
-	workDisplayNum := 0
-	for _, display := range monitor.Displays {
-		if x >= display.Min.X && x <= display.Min.X+display.W &&
-			y >= display.Min.Y && y <= display.Min.Y+display.H {
-			fmt.Printf("디스플레이 #%d 범위 내에 있습니다: %d, %d\n", display.Id, x, y)
-			workDisplayNum = display.Id
-		}
-	}
-
 	screenSize := monitor.Displays[workDisplayNum]
 
 	if settings.PeerScreenLoc == Right {
@@ -163,12 +143,39 @@ func startHooking(hookChannel chan []byte) {
 	<-hook.Process(s)
 }
 
-func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
+func CalcWidthHeight(monitor *Monitor) (int, int) {
+	totalWidth := 0
+	totalHeight := 0
+	if monitor.Settings.PeerScreenLoc == Left || monitor.Settings.PeerScreenLoc == Right {
+		for _, display := range monitor.Displays {
+			totalWidth += display.W
+		}
+	} else if monitor.Settings.PeerScreenLoc == Top || monitor.Settings.PeerScreenLoc == Bottom {
+		for _, display := range monitor.Displays {
+			totalHeight += display.H
+		}
+	}
+	return totalWidth, totalHeight
+}
+func GetWorkDisplay(monitor *Monitor) int {
+	x, y := robotgo.Location()
+	for _, display := range monitor.Displays {
+		if x >= display.Min.X && x <= display.Min.X+display.W &&
+			y >= display.Min.Y && y <= display.Min.Y+display.H {
+			fmt.Printf("디스플레이 #%d 범위 내에 있습니다: %d, %d\n", display.Id, x, y)
+			return display.Id
+		}
+	}
+	return -1
+}
 
+func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
+	totalWidth, totalHeight := CalcWidthHeight(monitor)
+	workDisplayNum := GetWorkDisplay(monitor)
 	for {
 		x, y := robotgo.Location()
 		fmt.Printf("마우스 위치: %d, %d\n", x, y)
-		keepGoing := DetectKeepGoing(x, y, monitor)
+		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
 		if keepGoing {
 			fmt.Printf("keepGoing\n")
 			// start hooking
