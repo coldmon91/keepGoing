@@ -12,7 +12,8 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-const DEBUG = true
+var DEBUG = true
+
 const BufferSize = 1024
 
 var PollingRate = 500 * time.Millisecond

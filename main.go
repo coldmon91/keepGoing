@@ -6,29 +6,34 @@ import (
 	"keepGoing/client"
 	core "keepGoing/core"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
 )
 
 type ExecArg struct {
-	Mode  string `arg:"-m,--mode" default:"server" help:"server or client"`
-	Debug bool   `arg:"-d,--debug" help:"debug mode"`
+	Mode     string `arg:"-m,--mode" default:"server" help:"server or client"`
+	PeerAddr string `arg:"-s,--server" help:"server address"`
+	Debug    bool   `arg:"-d,--debug" help:"debug mode"`
 }
 
 func main() {
 	args := ExecArg{}
 	arg.MustParse(&args)
 	displays := core.GetScreenSizes()
+	fmt.Printf("args : %v\n", args)
+	core.DEBUG = args.Debug
 
-	// args := os.Args
-	// mode := "server"
-	// if len(args) > 1 {
-	// 	mode = "client"
-	// }
-	// fmt.Println("모드:", mode)
 	settings := &core.Settings{}
 	settings.Mode = args.Mode
+	if settings.Mode == "client" {
+		if args.PeerAddr == "" {
+			fmt.Println("서버 주소를 입력하세요. --server <ip>:<port>")
+			return
+		}
+	}
 	settings.PeerScreenLoc = core.Right // TODO: get from user
 
 	myMonitor := core.Monitor{
@@ -36,17 +41,26 @@ func main() {
 		Displays: displays,
 		MouseObj: core.MouseObject{},
 	}
-
-	stopChan := StartCapture(settings.Mode, &myMonitor)
+	if args.PeerAddr == "" {
+		args.PeerAddr = "0.0.0.0:50310"
+	}
+	// port := 50310
+	stopChan := StartCapture(settings.Mode, &myMonitor, args.PeerAddr)
 
 	time.Sleep(60 * time.Second)
 	core.StopCapture(stopChan)
 }
 
-func StartCapture(mode string, myMonitor *core.Monitor) (stopChan chan bool) {
-	port := 50310
-	peerIP := "127.0.0.1"
-	peerAddress := fmt.Sprintf("%s:%d", peerIP, port)
+func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (stopChan chan bool) {
+	addrs := strings.Split(peerAddress, ":")
+	var port int
+	if len(addrs) == 1 {
+	} else if len(addrs) == 2 {
+		port, _ = strconv.Atoi(addrs[1])
+	} else {
+		fmt.Println("서버 주소 형식이 잘못되었습니다. <ip>:<port> 형식으로 입력하세요.")
+		return nil
+	}
 	stopChan = make(chan bool)
 	var conn net.Conn
 	if myMonitor.Settings.Mode == "server" {
@@ -104,7 +118,6 @@ func StartCapture(mode string, myMonitor *core.Monitor) (stopChan chan bool) {
 		} else if peerSettings.PeerScreenLoc == core.Bottom {
 			myMonitor.Settings.PeerScreenLoc = core.Top
 		}
-
 		fmt.Printf("클라이언트 설정: %s\n", myMonitor.Settings.String())
 		client.ClientMain(myMonitor)
 	}
