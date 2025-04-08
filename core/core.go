@@ -94,10 +94,20 @@ func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, total
 	return false
 }
 
-func startHooking(monitor *Monitor, hookChannel chan []byte) {
+var skipMouseMove = false
+
+func startHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel chan []byte) {
+	if monitor.Settings.PeerScreenLoc == Right {
+		skipMouseMove = true
+		robotgo.Move(peerDisplayInfo.Min.X, peerDisplayInfo.Min.Y)
+	}
 	x, y := robotgo.Location()
 	prevMousePos := Vec2{X: int(x), Y: int(y)}
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
+		if skipMouseMove {
+			skipMouseMove = false
+			return
+		}
 		if prevMousePos.X != int(e.X) || prevMousePos.Y != int(e.Y) {
 			deltaX := e.X - int16(prevMousePos.X)
 			deltaY := e.Y - int16(prevMousePos.Y)
@@ -184,21 +194,22 @@ func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
 		x, y := robotgo.Location()
 		fmt.Printf("마우스 위치: %d, %d (display %d)\n", x, y, workDisplayNum)
 		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
-		if keepGoing && DEBUG {
-			hookChannel := make(chan []byte)
-			go startHooking(monitor, hookChannel)
-			for keepGoing {
-				select {
-				case <-hookChannel:
-				}
-			}
-		}
 		if keepGoing && !DEBUG {
 			fmt.Printf("keepGoing\n")
 			// start hooking
 			readMsg := make([]byte, BufferSize)
 			hookChannel := make(chan []byte)
-			go startHooking(monitor, hookChannel)
+			// TODO: recv client's display info and sync with client's mouse position here
+			examplePeerDisplayInfo := &DisplayInfo{
+				Id: 0,
+				Min: Vec2{
+					X: 0,
+					Y: 0,
+				},
+				W: 1920,
+				H: 1080,
+			}
+			go startHooking(monitor, examplePeerDisplayInfo, hookChannel)
 			keepGoingChan := make(chan bool)
 			go func() { // waitting for message from client
 				for {

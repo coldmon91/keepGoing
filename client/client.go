@@ -77,11 +77,17 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 		robotgo.Move(prevMousePos.X+int(event.X), prevMousePos.Y+int(event.Y))
 		prevMousePos.X = prevMousePos.X + int(event.X)
 		prevMousePos.Y = prevMousePos.Y + int(event.Y)
-		if prevMousePos.X < 0 { // TODO: change depending on display
-			prevMousePos.X = 0
+		if prevMousePos.X < monitor.Displays[0].Min.X {
+			prevMousePos.X = monitor.Displays[0].Min.X
 		}
-		if prevMousePos.Y < 0 {
-			prevMousePos.Y = 0
+		if prevMousePos.Y < monitor.Displays[0].Min.Y {
+			prevMousePos.Y = monitor.Displays[0].Min.Y
+		}
+		if prevMousePos.X > monitor.Displays[0].W {
+			prevMousePos.X = monitor.Displays[0].W
+		}
+		if prevMousePos.Y > monitor.Displays[0].H {
+			prevMousePos.Y = monitor.Displays[0].H
 		}
 		fmt.Printf("prevMousePos.X: %d, prevMousePos.Y: %d\n", prevMousePos.X, prevMousePos.Y)
 	case hook.MouseDown:
