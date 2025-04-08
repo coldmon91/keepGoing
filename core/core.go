@@ -12,6 +12,7 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
+const DEBUG = true
 const BufferSize = 1024
 
 var PollingRate = 500 * time.Millisecond
@@ -94,11 +95,13 @@ func startHooking(hookChannel chan []byte) {
 	prevMousePos := Vec2{X: int(x), Y: int(y)}
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
 		if prevMousePos.X != int(e.X) || prevMousePos.Y != int(e.Y) {
-			// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
 			deltaX := e.X - int16(prevMousePos.X)
 			deltaY := e.Y - int16(prevMousePos.Y)
+			prevMousePos.X = int(e.X)
+			prevMousePos.Y = int(e.Y)
 			e.X = deltaX
 			e.Y = deltaY
+			fmt.Printf("deltaX: %d, deltaY: %d\n", deltaX, deltaY)
 		}
 		// e.Kind == MouseMove == 9
 		// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
@@ -118,8 +121,6 @@ func startHooking(hookChannel chan []byte) {
 			return
 		}
 		hookChannel <- bytesBuffer.Bytes()
-		prevMousePos.X = int(e.X)
-		prevMousePos.Y = int(e.Y)
 	})
 	hook.Register(hook.KeyDown, []string{}, func(e hook.Event) {
 		data, err := json.Marshal(e)
@@ -171,12 +172,21 @@ func GetWorkDisplay(monitor *Monitor) int {
 
 func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
 	totalWidth, totalHeight := CalcWidthHeight(monitor)
-	workDisplayNum := GetWorkDisplay(monitor)
 	for {
+		workDisplayNum := GetWorkDisplay(monitor)
 		x, y := robotgo.Location()
-		fmt.Printf("마우스 위치: %d, %d\n", x, y)
+		fmt.Printf("마우스 위치: %d, %d (display %d)\n", x, y, workDisplayNum)
 		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
-		if keepGoing {
+		if keepGoing && DEBUG {
+			hookChannel := make(chan []byte)
+			go startHooking(hookChannel)
+			for keepGoing {
+				select {
+				case <-hookChannel:
+				}
+			}
+		}
+		if keepGoing && !DEBUG {
 			fmt.Printf("keepGoing\n")
 			// start hooking
 			readMsg := make([]byte, BufferSize)

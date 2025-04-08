@@ -6,22 +6,29 @@ import (
 	"keepGoing/client"
 	core "keepGoing/core"
 	"net"
-	"os"
 	"time"
+
+	"github.com/alexflint/go-arg"
 )
 
+type ExecArg struct {
+	Mode  string `arg:"-m,--mode" default:"server" help:"server or client"`
+	Debug bool   `arg:"-d,--debug" help:"debug mode"`
+}
+
 func main() {
+	args := ExecArg{}
+	arg.MustParse(&args)
 	displays := core.GetScreenSizes()
 
-	args := os.Args
-	mode := "server"
-	if len(args) > 1 {
-		mode = "client"
-	}
-	fmt.Println("모드:", mode)
-
+	// args := os.Args
+	// mode := "server"
+	// if len(args) > 1 {
+	// 	mode = "client"
+	// }
+	// fmt.Println("모드:", mode)
 	settings := &core.Settings{}
-	settings.Mode = mode
+	settings.Mode = args.Mode
 	settings.PeerScreenLoc = core.Right // TODO: get from user
 
 	myMonitor := core.Monitor{
@@ -30,7 +37,7 @@ func main() {
 		MouseObj: core.MouseObject{},
 	}
 
-	stopChan := StartCapture(mode, &myMonitor)
+	stopChan := StartCapture(settings.Mode, &myMonitor)
 
 	time.Sleep(60 * time.Second)
 	core.StopCapture(stopChan)
@@ -43,20 +50,21 @@ func StartCapture(mode string, myMonitor *core.Monitor) (stopChan chan bool) {
 	stopChan = make(chan bool)
 	var conn net.Conn
 	if myMonitor.Settings.Mode == "server" {
-		conn = tcpListen(port)
-		if conn == nil {
-			fmt.Println("서버 연결 오류")
-			return nil
+		if !core.DEBUG {
+			conn = tcpListen(port)
+			if conn == nil {
+				fmt.Println("서버 연결 오류")
+				return nil
+			}
+			myMonitor.PeerConn = conn
+			b, e := json.Marshal(myMonitor.Settings)
+			if e != nil {
+				fmt.Println("Settings JSON 변환 오류:", e)
+				return nil
+			}
+			myMonitor.PeerConn.Write(b)
+			fmt.Printf("[server] %d bytes sent %s\n", len(b), string(b))
 		}
-		myMonitor.PeerConn = conn
-		b, e := json.Marshal(myMonitor.Settings)
-		if e != nil {
-			fmt.Println("Settings JSON 변환 오류:", e)
-			return nil
-		}
-		myMonitor.PeerConn.Write(b)
-		fmt.Printf("[server] %d bytes sent %s\n", len(b), string(b))
-
 		fmt.Println("키보드와 마우스 캡처를 시작합니다...")
 		fmt.Printf("서버 설정: %s\n", myMonitor.Settings.String())
 		go core.CaptureMouse(myMonitor, stopChan)
