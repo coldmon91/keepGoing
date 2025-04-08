@@ -12,6 +12,9 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
+// 프로그램에 의한 마우스 이동인지 확인하는 플래그 추가
+var isMovingProgrammatically = false
+
 var DEBUG = true
 
 const BufferSize = 1024
@@ -91,7 +94,7 @@ func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, total
 	return false
 }
 
-func startHooking(hookChannel chan []byte) {
+func startHooking(monitor *Monitor, hookChannel chan []byte) {
 	x, y := robotgo.Location()
 	prevMousePos := Vec2{X: int(x), Y: int(y)}
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
@@ -103,6 +106,9 @@ func startHooking(hookChannel chan []byte) {
 			e.X = deltaX
 			e.Y = deltaY
 			fmt.Printf("deltaX: %d, deltaY: %d\n", deltaX, deltaY)
+		} else {
+			// fmt.Printf("마우스 위치가 변경되지 않았습니다: %d, %d\n", e.X, e.Y)
+			return
 		}
 		// e.Kind == MouseMove == 9
 		// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
@@ -180,7 +186,7 @@ func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
 		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
 		if keepGoing && DEBUG {
 			hookChannel := make(chan []byte)
-			go startHooking(hookChannel)
+			go startHooking(monitor, hookChannel)
 			for keepGoing {
 				select {
 				case <-hookChannel:
@@ -192,7 +198,7 @@ func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
 			// start hooking
 			readMsg := make([]byte, BufferSize)
 			hookChannel := make(chan []byte)
-			go startHooking(hookChannel)
+			go startHooking(monitor, hookChannel)
 			keepGoingChan := make(chan bool)
 			go func() { // waitting for message from client
 				for {

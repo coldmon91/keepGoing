@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"keepGoing/core"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 	hook "github.com/robotn/gohook"
 )
 
 func ClientMain(monitor *core.Monitor) {
+	fmt.Println("Client started")
 	go func() {
 		for {
 			x, y := robotgo.Location()
@@ -21,6 +23,7 @@ func ClientMain(monitor *core.Monitor) {
 			if keepGoing {
 				monitor.PeerConn.Write([]byte("keepGoing"))
 			}
+			time.Sleep(1000 * time.Millisecond)
 		}
 	}()
 	eventsPolling(monitor)
@@ -32,6 +35,7 @@ func eventsPolling(monitor *core.Monitor) {
 	event := &hook.Event{}
 	x, y := robotgo.Location()
 	prevMousePos := core.Vec2{X: int(x), Y: int(y)}
+	robotgo.Move(0, 0)
 	for {
 		r, err := monitor.PeerConn.Read(readBuffer)
 		if err != nil {
@@ -55,29 +59,31 @@ func eventsPolling(monitor *core.Monitor) {
 			fmt.Println("Error unmarshalling event:", err)
 			continue
 		}
-		procHookedEvent(event, &prevMousePos)
+		procHookedEvent(monitor, event, &prevMousePos)
 	}
 }
 
-func procHookedEvent(event *hook.Event, prevMousePos *core.Vec2) {
+func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *core.Vec2) {
 	switch event.Kind {
 	case hook.MouseMove:
-		fmt.Printf("Mouse moved to: %d, %d\n", event.X, event.Y)
-		x := 0
-		if event.X > 0 {
-			x = prevMousePos.X + int(event.X)
-		} else {
-			x = prevMousePos.X - int(event.X)
+		// x, y := robotgo.Location()
+		fmt.Printf("get ev : %d, %d\n", event.X, event.Y)
+		// fmt.Printf("cur %d, %d\n", x, y)
+		// x = x + int(event.X)
+		// y = y + int(event.Y)
+		// x := int(event.X)
+		// y := int(event.Y)
+		// fmt.Printf("Mouse moved to: %d, %d\n", x, y)
+		robotgo.Move(prevMousePos.X+int(event.X), prevMousePos.Y+int(event.Y))
+		prevMousePos.X = prevMousePos.X + int(event.X)
+		prevMousePos.Y = prevMousePos.Y + int(event.Y)
+		if prevMousePos.X < 0 { // TODO: change depending on display
+			prevMousePos.X = 0
 		}
-		y := 0
-		if event.Y > 0 {
-			y = prevMousePos.Y + int(event.Y)
-		} else {
-			y = prevMousePos.Y - int(event.Y)
+		if prevMousePos.Y < 0 {
+			prevMousePos.Y = 0
 		}
-		robotgo.Move(int(x), int(y))
-		prevMousePos.X = int(x)
-		prevMousePos.Y = int(y)
+		fmt.Printf("prevMousePos.X: %d, prevMousePos.Y: %d\n", prevMousePos.X, prevMousePos.Y)
 	case hook.MouseDown:
 		fmt.Printf("Mouse button %d pressed at: %d, %d\n", event.Button, event.X, event.Y)
 		robotgo.MouseDown(event.Button)
