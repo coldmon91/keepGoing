@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 	hook "github.com/robotn/gohook"
@@ -17,6 +19,7 @@ var isMovingProgrammatically = false
 var DEBUG = true
 
 const BufferSize = 1024
+const MouseEventCollectionDuration = 60 * time.Millisecond // 마우스 이벤트 수집 시간 (60ms)
 
 type PeerScreenLocation int
 
@@ -117,6 +120,59 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 		fmt.Printf("모니터 비율 계산: 가로 %.2f, 세로 %.2f\n", widthRatio, heightRatio)
 	}
 
+	// 마우스 이벤트 수집 관련 변수
+	var accumulatedDeltaX int16 = 0
+	var accumulatedDeltaY int16 = 0
+	var timer *time.Timer
+	var timerMutex sync.Mutex
+	var isTimerRunning bool = false
+
+	// 마우스 이벤트 전송 함수
+	sendMouseEvent := func() {
+		timerMutex.Lock()
+		defer timerMutex.Unlock()
+
+		isTimerRunning = false
+
+		// 델타가 없으면 전송하지 않음
+		if accumulatedDeltaX == 0 && accumulatedDeltaY == 0 {
+			return
+		}
+
+		// 수집된 델타 값으로 이벤트 생성
+		e := hook.Event{
+			Kind: hook.MouseMove,
+			X:    accumulatedDeltaX,
+			Y:    accumulatedDeltaY,
+		}
+
+		if DEBUG {
+			fmt.Printf("최종 누적 델타 전송 - deltaX: %d, deltaY: %d\n", accumulatedDeltaX, accumulatedDeltaY)
+		}
+
+		// 이벤트 전송
+		data, err := json.Marshal(e)
+		if err != nil {
+			fmt.Println("JSON 인코딩 오류:", err)
+			return
+		}
+		message := Message{
+			MsgType: hook.MouseMove,
+			Data:    data,
+		}
+		bytesBuffer := new(bytes.Buffer)
+		err = gob.NewEncoder(bytesBuffer).Encode(message)
+		if err != nil {
+			fmt.Println("메시지 인코딩 오류:", err)
+			return
+		}
+		hookChannel <- bytesBuffer.Bytes()
+
+		// 누적 델타 초기화
+		accumulatedDeltaX = 0
+		accumulatedDeltaY = 0
+	}
+
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
 		if skipMouseMove {
 			skipMouseMove = false
@@ -136,13 +192,25 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 			adjustedDeltaX := int16(float64(deltaX) * widthRatio)
 			adjustedDeltaY := int16(float64(deltaY) * heightRatio)
 
-			// 조정된 델타값 적용
-			e.X = adjustedDeltaX
-			e.Y = adjustedDeltaY
+			// 델타값 누적
+			timerMutex.Lock()
+			accumulatedDeltaX += adjustedDeltaX
+			accumulatedDeltaY += adjustedDeltaY
+
+			// 타이머가 실행 중이 아니면 새로 시작
+			if !isTimerRunning {
+				isTimerRunning = true
+				if timer != nil {
+					timer.Stop()
+				}
+				timer = time.AfterFunc(MouseEventCollectionDuration, sendMouseEvent)
+			}
+			timerMutex.Unlock()
 
 			if DEBUG {
 				fmt.Printf("원본 deltaX: %d, deltaY: %d\n", deltaX, deltaY)
 				fmt.Printf("조정된 deltaX: %d, deltaY: %d\n", adjustedDeltaX, adjustedDeltaY)
+				fmt.Printf("누적된 deltaX: %d, deltaY: %d\n", accumulatedDeltaX, accumulatedDeltaY)
 			} else {
 				fmt.Printf("deltaX: %d, deltaY: %d\n", adjustedDeltaX, adjustedDeltaY)
 			}
@@ -150,29 +218,13 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 			// fmt.Printf("마우스 위치가 변경되지 않았습니다: %d, %d\n", e.X, e.Y)
 			return
 		}
-		// e.Kind == MouseMove == 9
-		// fmt.Printf("마우스 이동: %d, %d\n", e.X, e.Y)
-		data, err := json.Marshal(e)
-		if err != nil {
-			fmt.Println("JSON 인코딩 오류:", err)
-			return
-		}
-		message := Message{
-			MsgType: hook.MouseMove,
-			Data:    data,
-		}
-		bytesBuffer := new(bytes.Buffer)
-		err = gob.NewEncoder(bytesBuffer).Encode(message)
-		if err != nil {
-			fmt.Println("메시지 인코딩 오류:", err)
-			return
-		}
-		hookChannel <- bytesBuffer.Bytes()
+
 		skipMouseMove = true
 		prevMousePos.X = centerX
 		prevMousePos.Y = centerY
 		robotgo.Move(centerX, centerY)
 	})
+
 	hook.Register(hook.KeyDown, []string{}, func(e hook.Event) {
 		data, err := json.Marshal(e)
 		if err != nil {

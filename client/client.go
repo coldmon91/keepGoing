@@ -15,8 +15,8 @@ import (
 // 마우스 움직임 보정 상수
 const (
 	// 마우스 움직임 증폭 계수 (델타값에 곱해짐)
-	MOUSE_MOVEMENT_AMPLIFIER_X = 6.0 // 증폭 계수를 1.5에서 3.0으로 증가
-	MOUSE_MOVEMENT_AMPLIFIER_Y = 6.0 // 증폭 계수를 1.5에서 3.0으로 증가
+	MOUSE_MOVEMENT_AMPLIFIER_X = 1.0
+	MOUSE_MOVEMENT_AMPLIFIER_Y = 1.0
 )
 
 func ClientMain(monitor *core.Monitor) {
