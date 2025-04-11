@@ -122,6 +122,9 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 			skipMouseMove = false
 			return
 		}
+		centerX := peerDisplayInfo.Min.X + peerDisplayInfo.W/2
+		centerY := peerDisplayInfo.Min.Y + peerDisplayInfo.H/2
+
 		if prevMousePos.X != int(e.X) || prevMousePos.Y != int(e.Y) {
 			// 델타값 계산
 			deltaX := e.X - int16(prevMousePos.X)
@@ -165,6 +168,10 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 			return
 		}
 		hookChannel <- bytesBuffer.Bytes()
+		skipMouseMove = true
+		prevMousePos.X = centerX
+		prevMousePos.Y = centerY
+		robotgo.Move(centerX, centerY)
 	})
 	hook.Register(hook.KeyDown, []string{}, func(e hook.Event) {
 		data, err := json.Marshal(e)
