@@ -37,10 +37,11 @@ type (
 	}
 
 	Monitor struct {
-		Settings *Settings
-		MouseObj MouseObject
-		PeerConn net.Conn
-		Displays []DisplayInfo `json:"displays"`
+		Settings          *Settings
+		MouseObj          MouseObject
+		PeerConn          net.Conn      `json:"-"` // JSON 직렬화에서 제외
+		Displays          []DisplayInfo `json:"displays"`
+		ServerDisplayInfo *DisplayInfo  `json:"server_display_info,omitempty"` // 서버 디스플레이 정보 추가
 	}
 
 	Settings struct {

@@ -72,27 +72,46 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 			}
 			myMonitor.PeerConn = conn
 
-			// 서버 설정 정보 전송
-			b, e := json.Marshal(myMonitor.Settings)
+			// 서버의 Monitor 객체 전송
+			b, e := json.Marshal(myMonitor)
 			if e != nil {
-				fmt.Println("Settings JSON 변환 오류:", e)
+				fmt.Println("Monitor JSON 변환 오류:", e)
 				return nil
 			}
-			myMonitor.PeerConn.Write(b)
-			fmt.Printf("[server] %d bytes sent %s\n", len(b), string(b))
-
-			// 클라이언트의 디스플레이 정보 수신
-			displayInfoBuffer := make([]byte, core.BufferSize)
-			r, err := myMonitor.PeerConn.Read(displayInfoBuffer)
+			_, err := myMonitor.PeerConn.Write(b)
 			if err != nil {
-				fmt.Println("클라이언트 디스플레이 정보 수신 오류:", err)
+				fmt.Println("Monitor 정보 전송 오류:", err)
+				return nil
+			}
+			fmt.Printf("[server] %d bytes sent, Monitor 객체를 클라이언트로 전송했습니다.\n", len(b))
+
+			// 클라이언트의 Monitor 객체 수신
+			peerMonitorBuffer := make([]byte, core.BufferSize*4) // Monitor 객체는 큰 데이터일 수 있어 버퍼 크기 증가
+			r, err := myMonitor.PeerConn.Read(peerMonitorBuffer)
+			if err != nil {
+				fmt.Println("클라이언트 Monitor 정보 수신 오류:", err)
 				return nil
 			}
 			if r == 0 {
 				fmt.Println("클라이언트 연결이 종료되었습니다.")
 				return nil
 			}
-			fmt.Printf("[server] 클라이언트 디스플레이 정보 %d bytes 수신\n", r)
+
+			peerMonitor := core.Monitor{}
+			err = json.Unmarshal(peerMonitorBuffer[:r], &peerMonitor)
+			if err != nil {
+				fmt.Println("클라이언트 Monitor JSON 변환 오류:", err)
+				return nil
+			}
+
+			fmt.Printf("[server] 클라이언트 Monitor 정보 %d bytes 수신\n", r)
+
+			// 클라이언트에서 받은 디스플레이 정보 저장
+			if peerMonitor.Displays != nil && len(peerMonitor.Displays) > 0 {
+				fmt.Printf("[server] 클라이언트 디스플레이 정보: %+v\n", peerMonitor.Displays[0])
+				// ServerDisplayInfo 필드를 클라이언트의 기본 디스플레이 정보로 설정
+				myMonitor.ServerDisplayInfo = &peerMonitor.Displays[0]
+			}
 		}
 		fmt.Println("키보드와 마우스 캡처를 시작합니다...")
 		fmt.Printf("서버 설정: %s\n", myMonitor.Settings.String())
@@ -106,49 +125,57 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 		fmt.Println("서버에 연결되었습니다:", peerAddress)
 		myMonitor.PeerConn = conn
 
-		// 서버 설정 정보 수신
-		b := make([]byte, core.BufferSize)
-		r, err := myMonitor.PeerConn.Read(b)
+		// 서버의 Monitor 객체 수신
+		peerMonitorBuffer := make([]byte, core.BufferSize*4) // Monitor 객체는 큰 데이터일 수 있어 버퍼 크기 증가
+		r, err := myMonitor.PeerConn.Read(peerMonitorBuffer)
 		if err != nil {
-			fmt.Println("서버에서 설정을 읽는 중 오류 발생:", err)
+			fmt.Println("서버에서 Monitor 정보를 읽는 중 오류 발생:", err)
 			return nil
 		}
 		if r == 0 {
 			fmt.Println("서버 연결이 종료되었습니다.")
 			return nil
 		}
-		fmt.Printf("[client] Read %d bytes\n", r)
-		peerSettings := core.Settings{}
-		err = json.Unmarshal(b[:r], &peerSettings)
+
+		peerMonitor := core.Monitor{}
+		err = json.Unmarshal(peerMonitorBuffer[:r], &peerMonitor)
 		if err != nil {
-			fmt.Println("Settings JSON 변환 오류:", err)
+			fmt.Println("서버 Monitor JSON 변환 오류:", err)
 			return nil
 		}
-		fmt.Println("클라이언트가 서버에서 설정을 받았습니다:", string(b))
-		if peerSettings.PeerScreenLoc == core.Left {
-			myMonitor.Settings.PeerScreenLoc = core.Right
-		} else if peerSettings.PeerScreenLoc == core.Right {
-			myMonitor.Settings.PeerScreenLoc = core.Left
-		} else if peerSettings.PeerScreenLoc == core.Top {
-			myMonitor.Settings.PeerScreenLoc = core.Bottom
-		} else if peerSettings.PeerScreenLoc == core.Bottom {
-			myMonitor.Settings.PeerScreenLoc = core.Top
+		fmt.Printf("[client] 서버 Monitor 정보 %d bytes 수신\n", r)
+
+		// 서버의 설정 정보를 바탕으로 클라이언트의 화면 위치 설정
+		if peerMonitor.Settings != nil {
+			if peerMonitor.Settings.PeerScreenLoc == core.Left {
+				myMonitor.Settings.PeerScreenLoc = core.Right
+			} else if peerMonitor.Settings.PeerScreenLoc == core.Right {
+				myMonitor.Settings.PeerScreenLoc = core.Left
+			} else if peerMonitor.Settings.PeerScreenLoc == core.Top {
+				myMonitor.Settings.PeerScreenLoc = core.Bottom
+			} else if peerMonitor.Settings.PeerScreenLoc == core.Bottom {
+				myMonitor.Settings.PeerScreenLoc = core.Top
+			}
 		}
 
-		// 클라이언트 디스플레이 정보 전송
-		if myMonitor.Displays != nil && len(myMonitor.Displays) > 0 {
-			displayInfo, err := json.Marshal(myMonitor.Displays[0])
-			if err != nil {
-				fmt.Println("디스플레이 정보 JSON 변환 오류:", err)
-				return nil
-			}
-			_, err = myMonitor.PeerConn.Write(displayInfo)
-			if err != nil {
-				fmt.Println("디스플레이 정보 전송 오류:", err)
-				return nil
-			}
-			fmt.Println("클라이언트 디스플레이 정보를 서버로 전송했습니다.")
+		// 서버의 디스플레이 정보를 클라이언트의 ServerDisplayInfo 필드에 설정
+		if peerMonitor.Displays != nil && len(peerMonitor.Displays) > 0 {
+			myMonitor.ServerDisplayInfo = &peerMonitor.Displays[0]
+			fmt.Printf("[client] 서버 디스플레이 정보 설정: %+v\n", *myMonitor.ServerDisplayInfo)
 		}
+
+		// 클라이언트의 Monitor 객체 전송
+		b, e := json.Marshal(myMonitor)
+		if e != nil {
+			fmt.Println("Monitor JSON 변환 오류:", e)
+			return nil
+		}
+		_, err = myMonitor.PeerConn.Write(b)
+		if err != nil {
+			fmt.Println("Monitor 정보 전송 오류:", err)
+			return nil
+		}
+		fmt.Printf("[client] %d bytes sent, Monitor 객체를 서버로 전송했습니다.\n", len(b))
 
 		fmt.Printf("클라이언트 설정: %s\n", myMonitor.Settings.String())
 		client.ClientMain(myMonitor)
@@ -181,6 +208,5 @@ func tcpConnect(address string) net.Conn {
 		fmt.Printf("서버에 연결할 수 없습니다: %v\n", err)
 		return nil
 	}
-	fmt.Printf("서버에 연결되었습니다: %s\n", address)
 	return conn
 }

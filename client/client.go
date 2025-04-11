@@ -15,8 +15,8 @@ import (
 // 마우스 움직임 보정 상수
 const (
 	// 마우스 움직임 증폭 계수 (델타값에 곱해짐)
-	MOUSE_MOVEMENT_AMPLIFIER_X = 1.5
-	MOUSE_MOVEMENT_AMPLIFIER_Y = 1.5
+	MOUSE_MOVEMENT_AMPLIFIER_X = 6.0 // 증폭 계수를 1.5에서 3.0으로 증가
+	MOUSE_MOVEMENT_AMPLIFIER_Y = 6.0 // 증폭 계수를 1.5에서 3.0으로 증가
 )
 
 func ClientMain(monitor *core.Monitor) {
@@ -53,6 +53,29 @@ func eventsPolling(monitor *core.Monitor) {
 			fmt.Println("Connection closed by server")
 			break
 		}
+		toString := string(readBuffer[:r])
+		if toString == "keepGoing" {
+			fmt.Println("recved keepGoing")
+
+			// 서버에 준비 상태를 알림
+			monitor.PeerConn.Write([]byte("monitor_ready"))
+
+			// 최신 Monitor 객체 전송 (디스플레이 정보 포함)
+			monitor.Displays = core.GetScreenSizes() // 최신 화면 정보로 업데이트
+
+			b, err := json.Marshal(monitor)
+			if err != nil {
+				fmt.Println("Error marshalling monitor info:", err)
+				continue
+			}
+			_, err = monitor.PeerConn.Write(b)
+			if err != nil {
+				fmt.Println("Error sending monitor info:", err)
+				continue
+			}
+			fmt.Printf("[client] Monitor 정보 %d bytes 전송\n", len(b))
+			continue
+		}
 		fmt.Printf("[client] Read %d bytes\n", r)
 		decoder := gob.NewDecoder(bytes.NewBuffer(readBuffer))
 		var msg core.Message
@@ -76,12 +99,28 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 		// x, y := robotgo.Location()
 		fmt.Printf("get ev : %d, %d\n", event.X, event.Y)
 
-		// 마우스 움직임 증폭 적용
-		adjustedDeltaX := int(float64(event.X) * MOUSE_MOVEMENT_AMPLIFIER_X)
-		adjustedDeltaY := int(float64(event.Y) * MOUSE_MOVEMENT_AMPLIFIER_Y)
+		// 서버와 클라이언트 화면 크기 비율에 따른 추가 스케일링 계수 계산
+		// 기본값은 1.0(동일한 크기일 경우)
+		scaleX := 1.0
+		scaleY := 1.0
+
+		// 화면 크기에 비례하여 마우스 이동 스케일링
+		if len(monitor.Displays) > 0 && monitor.ServerDisplayInfo != nil {
+			if monitor.ServerDisplayInfo.W > 0 && monitor.Displays[0].W > 0 {
+				scaleX = float64(monitor.ServerDisplayInfo.W) / float64(monitor.Displays[0].W)
+			}
+			if monitor.ServerDisplayInfo.H > 0 && monitor.Displays[0].H > 0 {
+				scaleY = float64(monitor.ServerDisplayInfo.H) / float64(monitor.Displays[0].H)
+			}
+		}
+
+		// 마우스 움직임 증폭 적용 (기본 증폭 계수 × 화면 크기 비율)
+		adjustedDeltaX := int(float64(event.X) * MOUSE_MOVEMENT_AMPLIFIER_X * scaleX)
+		adjustedDeltaY := int(float64(event.Y) * MOUSE_MOVEMENT_AMPLIFIER_Y * scaleY)
 
 		if core.DEBUG {
 			fmt.Printf("원본 델타값: X=%d, Y=%d\n", event.X, event.Y)
+			fmt.Printf("화면 비율: X=%f, Y=%f\n", scaleX, scaleY)
 			fmt.Printf("증폭된 델타값: X=%d, Y=%d\n", adjustedDeltaX, adjustedDeltaY)
 		}
 
@@ -90,17 +129,20 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 		prevMousePos.Y = prevMousePos.Y + adjustedDeltaY
 
 		// 화면 경계 처리
-		if prevMousePos.X < monitor.Displays[0].Min.X {
-			prevMousePos.X = monitor.Displays[0].Min.X
-		}
-		if prevMousePos.Y < monitor.Displays[0].Min.Y {
-			prevMousePos.Y = monitor.Displays[0].Min.Y
-		}
-		if prevMousePos.X > monitor.Displays[0].Min.X+monitor.Displays[0].W {
-			prevMousePos.X = monitor.Displays[0].Min.X + monitor.Displays[0].W
-		}
-		if prevMousePos.Y > monitor.Displays[0].Min.Y+monitor.Displays[0].H {
-			prevMousePos.Y = monitor.Displays[0].Min.Y + monitor.Displays[0].H
+		if len(monitor.Displays) > 0 {
+			display := monitor.Displays[0]
+			if prevMousePos.X < display.Min.X {
+				prevMousePos.X = display.Min.X
+			}
+			if prevMousePos.Y < display.Min.Y {
+				prevMousePos.Y = display.Min.Y
+			}
+			if prevMousePos.X > display.Min.X+display.W {
+				prevMousePos.X = display.Min.X + display.W
+			}
+			if prevMousePos.Y > display.Min.Y+display.H {
+				prevMousePos.Y = display.Min.Y + display.H
+			}
 		}
 		fmt.Printf("prevMousePos.X: %d, prevMousePos.Y: %d\n", prevMousePos.X, prevMousePos.Y)
 	case hook.MouseDown:
