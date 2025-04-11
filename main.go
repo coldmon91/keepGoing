@@ -71,6 +71,8 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 				return nil
 			}
 			myMonitor.PeerConn = conn
+
+			// 서버 설정 정보 전송
 			b, e := json.Marshal(myMonitor.Settings)
 			if e != nil {
 				fmt.Println("Settings JSON 변환 오류:", e)
@@ -78,10 +80,23 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 			}
 			myMonitor.PeerConn.Write(b)
 			fmt.Printf("[server] %d bytes sent %s\n", len(b), string(b))
+
+			// 클라이언트의 디스플레이 정보 수신
+			displayInfoBuffer := make([]byte, core.BufferSize)
+			r, err := myMonitor.PeerConn.Read(displayInfoBuffer)
+			if err != nil {
+				fmt.Println("클라이언트 디스플레이 정보 수신 오류:", err)
+				return nil
+			}
+			if r == 0 {
+				fmt.Println("클라이언트 연결이 종료되었습니다.")
+				return nil
+			}
+			fmt.Printf("[server] 클라이언트 디스플레이 정보 %d bytes 수신\n", r)
 		}
 		fmt.Println("키보드와 마우스 캡처를 시작합니다...")
 		fmt.Printf("서버 설정: %s\n", myMonitor.Settings.String())
-		go core.CaptureMouse(myMonitor, stopChan)
+		go ServerMain(myMonitor, stopChan)
 	} else if myMonitor.Settings.Mode == "client" {
 		conn = tcpConnect(peerAddress)
 		if conn == nil {
@@ -91,6 +106,7 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 		fmt.Println("서버에 연결되었습니다:", peerAddress)
 		myMonitor.PeerConn = conn
 
+		// 서버 설정 정보 수신
 		b := make([]byte, core.BufferSize)
 		r, err := myMonitor.PeerConn.Read(b)
 		if err != nil {
@@ -118,6 +134,22 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 		} else if peerSettings.PeerScreenLoc == core.Bottom {
 			myMonitor.Settings.PeerScreenLoc = core.Top
 		}
+
+		// 클라이언트 디스플레이 정보 전송
+		if myMonitor.Displays != nil && len(myMonitor.Displays) > 0 {
+			displayInfo, err := json.Marshal(myMonitor.Displays[0])
+			if err != nil {
+				fmt.Println("디스플레이 정보 JSON 변환 오류:", err)
+				return nil
+			}
+			_, err = myMonitor.PeerConn.Write(displayInfo)
+			if err != nil {
+				fmt.Println("디스플레이 정보 전송 오류:", err)
+				return nil
+			}
+			fmt.Println("클라이언트 디스플레이 정보를 서버로 전송했습니다.")
+		}
+
 		fmt.Printf("클라이언트 설정: %s\n", myMonitor.Settings.String())
 		client.ClientMain(myMonitor)
 	}

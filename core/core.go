@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-vgo/robotgo"
 	hook "github.com/robotn/gohook"
@@ -18,8 +17,6 @@ var isMovingProgrammatically = false
 var DEBUG = true
 
 const BufferSize = 1024
-
-var PollingRate = 500 * time.Millisecond
 
 type PeerScreenLocation int
 
@@ -96,26 +93,55 @@ func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, total
 
 var skipMouseMove = false
 
-func startHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel chan []byte) {
+func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel chan []byte) {
 	if monitor.Settings.PeerScreenLoc == Right {
 		skipMouseMove = true
 		robotgo.Move(peerDisplayInfo.Min.X, peerDisplayInfo.Min.Y)
 	}
 	x, y := robotgo.Location()
 	prevMousePos := Vec2{X: int(x), Y: int(y)}
+
+	// 현재 작업 중인 디스플레이 확인
+	workDisplayNum := GetWorkDisplay(monitor)
+	if workDisplayNum == -1 {
+		workDisplayNum = 0 // 기본값 설정
+	}
+
+	// 현재 모니터와 클라이언트(Peer) 모니터 크기 비율 계산
+	currentDisplay := monitor.Displays[workDisplayNum]
+	widthRatio := float64(peerDisplayInfo.W) / float64(currentDisplay.W)
+	heightRatio := float64(peerDisplayInfo.H) / float64(currentDisplay.H)
+
+	if DEBUG {
+		fmt.Printf("모니터 비율 계산: 가로 %.2f, 세로 %.2f\n", widthRatio, heightRatio)
+	}
+
 	hook.Register(hook.MouseMove, []string{}, func(e hook.Event) {
 		if skipMouseMove {
 			skipMouseMove = false
 			return
 		}
 		if prevMousePos.X != int(e.X) || prevMousePos.Y != int(e.Y) {
+			// 델타값 계산
 			deltaX := e.X - int16(prevMousePos.X)
 			deltaY := e.Y - int16(prevMousePos.Y)
 			prevMousePos.X = int(e.X)
 			prevMousePos.Y = int(e.Y)
-			e.X = deltaX
-			e.Y = deltaY
-			fmt.Printf("deltaX: %d, deltaY: %d\n", deltaX, deltaY)
+
+			// 클라이언트 화면 크기에 맞게 델타값 조정
+			adjustedDeltaX := int16(float64(deltaX) * widthRatio)
+			adjustedDeltaY := int16(float64(deltaY) * heightRatio)
+
+			// 조정된 델타값 적용
+			e.X = adjustedDeltaX
+			e.Y = adjustedDeltaY
+
+			if DEBUG {
+				fmt.Printf("원본 deltaX: %d, deltaY: %d\n", deltaX, deltaY)
+				fmt.Printf("조정된 deltaX: %d, deltaY: %d\n", adjustedDeltaX, adjustedDeltaY)
+			} else {
+				fmt.Printf("deltaX: %d, deltaY: %d\n", adjustedDeltaX, adjustedDeltaY)
+			}
 		} else {
 			// fmt.Printf("마우스 위치가 변경되지 않았습니다: %d, %d\n", e.X, e.Y)
 			return
@@ -185,73 +211,6 @@ func GetWorkDisplay(monitor *Monitor) int {
 		}
 	}
 	return -1
-}
-
-func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
-	totalWidth, totalHeight := CalcWidthHeight(monitor)
-	for {
-		workDisplayNum := GetWorkDisplay(monitor)
-		x, y := robotgo.Location()
-		fmt.Printf("마우스 위치: %d, %d (display %d)\n", x, y, workDisplayNum)
-		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
-		if keepGoing && !DEBUG {
-			fmt.Printf("keepGoing\n")
-			// start hooking
-			readMsg := make([]byte, BufferSize)
-			hookChannel := make(chan []byte)
-			// TODO: recv client's display info and sync with client's mouse position here
-			examplePeerDisplayInfo := &DisplayInfo{
-				Id: 0,
-				Min: Vec2{
-					X: 0,
-					Y: 0,
-				},
-				W: 1920,
-				H: 1080,
-			}
-			go startHooking(monitor, examplePeerDisplayInfo, hookChannel)
-			keepGoingChan := make(chan bool)
-			go func() { // waitting for message from client
-				for {
-					// receive message from client
-					r, err := monitor.PeerConn.Read(readMsg)
-					if err != nil {
-						fmt.Println("연결 읽기 오류:", err)
-						return
-					}
-					if r == 0 {
-						fmt.Println("연결이 종료되었습니다.")
-						return
-					}
-					fmt.Printf("[server] %d bytes 읽음\n", r)
-					if string(readMsg) == "keepGoing" {
-						fmt.Println("keepGoing from client")
-						keepGoingChan <- true
-						return
-					}
-				}
-			}()
-			for keepGoing {
-				select {
-				case msg := <-hookChannel:
-					_, err := monitor.PeerConn.Write(msg)
-					if err != nil {
-						fmt.Println("메시지 전송 오류:", err)
-						return
-					}
-				case <-keepGoingChan:
-					keepGoing = false
-					fmt.Println("keepGoing from client")
-				case <-stopChan:
-					fmt.Println("stopChan 수신")
-					return
-				}
-			}
-		}
-		monitor.MouseObj.PreviousMousePos.X = x
-		monitor.MouseObj.PreviousMousePos.Y = y
-		time.Sleep(PollingRate)
-	}
 }
 
 func StopCapture(stopChan chan<- bool) {

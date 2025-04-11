@@ -12,6 +12,13 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
+// 마우스 움직임 보정 상수
+const (
+	// 마우스 움직임 증폭 계수 (델타값에 곱해짐)
+	MOUSE_MOVEMENT_AMPLIFIER_X = 1.5
+	MOUSE_MOVEMENT_AMPLIFIER_Y = 1.5
+)
+
 func ClientMain(monitor *core.Monitor) {
 	fmt.Println("Client started")
 	go func() {
@@ -68,26 +75,32 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 	case hook.MouseMove:
 		// x, y := robotgo.Location()
 		fmt.Printf("get ev : %d, %d\n", event.X, event.Y)
-		// fmt.Printf("cur %d, %d\n", x, y)
-		// x = x + int(event.X)
-		// y = y + int(event.Y)
-		// x := int(event.X)
-		// y := int(event.Y)
-		// fmt.Printf("Mouse moved to: %d, %d\n", x, y)
-		robotgo.Move(prevMousePos.X+int(event.X), prevMousePos.Y+int(event.Y))
-		prevMousePos.X = prevMousePos.X + int(event.X)
-		prevMousePos.Y = prevMousePos.Y + int(event.Y)
+
+		// 마우스 움직임 증폭 적용
+		adjustedDeltaX := int(float64(event.X) * MOUSE_MOVEMENT_AMPLIFIER_X)
+		adjustedDeltaY := int(float64(event.Y) * MOUSE_MOVEMENT_AMPLIFIER_Y)
+
+		if core.DEBUG {
+			fmt.Printf("원본 델타값: X=%d, Y=%d\n", event.X, event.Y)
+			fmt.Printf("증폭된 델타값: X=%d, Y=%d\n", adjustedDeltaX, adjustedDeltaY)
+		}
+
+		robotgo.Move(prevMousePos.X+adjustedDeltaX, prevMousePos.Y+adjustedDeltaY)
+		prevMousePos.X = prevMousePos.X + adjustedDeltaX
+		prevMousePos.Y = prevMousePos.Y + adjustedDeltaY
+
+		// 화면 경계 처리
 		if prevMousePos.X < monitor.Displays[0].Min.X {
 			prevMousePos.X = monitor.Displays[0].Min.X
 		}
 		if prevMousePos.Y < monitor.Displays[0].Min.Y {
 			prevMousePos.Y = monitor.Displays[0].Min.Y
 		}
-		if prevMousePos.X > monitor.Displays[0].W {
-			prevMousePos.X = monitor.Displays[0].W
+		if prevMousePos.X > monitor.Displays[0].Min.X+monitor.Displays[0].W {
+			prevMousePos.X = monitor.Displays[0].Min.X + monitor.Displays[0].W
 		}
-		if prevMousePos.Y > monitor.Displays[0].H {
-			prevMousePos.Y = monitor.Displays[0].H
+		if prevMousePos.Y > monitor.Displays[0].Min.Y+monitor.Displays[0].H {
+			prevMousePos.Y = monitor.Displays[0].Min.Y + monitor.Displays[0].H
 		}
 		fmt.Printf("prevMousePos.X: %d, prevMousePos.Y: %d\n", prevMousePos.X, prevMousePos.Y)
 	case hook.MouseDown:
