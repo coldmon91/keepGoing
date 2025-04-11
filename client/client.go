@@ -147,10 +147,27 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 		fmt.Printf("prevMousePos.X: %d, prevMousePos.Y: %d\n", prevMousePos.X, prevMousePos.Y)
 	case hook.MouseDown:
 		fmt.Printf("Mouse button %d pressed at: %d, %d\n", event.Button, event.X, event.Y)
-		robotgo.MouseDown(event.Button)
+		if event.Button == 1 {
+			robotgo.MouseDown("left")
+		}
+		if event.Button == 2 {
+			robotgo.MouseDown("right")
+		}
+		if event.Button == 3 {
+			robotgo.MouseDown("middle")
+		}
 	case hook.MouseUp:
 		fmt.Printf("Mouse button %d released at: %d, %d\n", event.Button, event.X, event.Y)
-		robotgo.MouseUp(event.Button)
+		if event.Button == 1 {
+			robotgo.MouseUp("left")
+		}
+		if event.Button == 2 {
+			robotgo.MouseUp("right")
+		}
+		if event.Button == 3 {
+			robotgo.MouseUp("middle")
+		}
+	case hook.MouseWheel:
 	case hook.KeyDown:
 		fmt.Printf("Key %d pressed\n", event.Rawcode)
 		robotgo.KeyDown(hook.RawcodetoKeychar(event.Rawcode))

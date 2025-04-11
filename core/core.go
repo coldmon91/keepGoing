@@ -224,6 +224,42 @@ func StartHooking(monitor *Monitor, peerDisplayInfo *DisplayInfo, hookChannel ch
 		prevMousePos.Y = centerY
 		robotgo.Move(centerX, centerY)
 	})
+	hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+		data, err := json.Marshal(e)
+		if err != nil {
+			fmt.Println("JSON 인코딩 오류:", err)
+			return
+		}
+		mouseMsg := Message{
+			MsgType: hook.MouseDown,
+			Data:    data,
+		}
+		bytesBuffer := new(bytes.Buffer)
+		err = gob.NewEncoder(bytesBuffer).Encode(mouseMsg)
+		if err != nil {
+			fmt.Println("메시지 인코딩 오류:", err)
+			return
+		}
+		hookChannel <- bytesBuffer.Bytes()
+	})
+	hook.Register(hook.MouseUp, []string{}, func(e hook.Event) {
+		data, err := json.Marshal(e)
+		if err != nil {
+			fmt.Println("JSON 인코딩 오류:", err)
+			return
+		}
+		mouseMsg := Message{
+			MsgType: hook.MouseDown,
+			Data:    data,
+		}
+		bytesBuffer := new(bytes.Buffer)
+		err = gob.NewEncoder(bytesBuffer).Encode(mouseMsg)
+		if err != nil {
+			fmt.Println("메시지 인코딩 오류:", err)
+			return
+		}
+		hookChannel <- bytesBuffer.Bytes()
+	})
 
 	hook.Register(hook.KeyDown, []string{}, func(e hook.Event) {
 		data, err := json.Marshal(e)
