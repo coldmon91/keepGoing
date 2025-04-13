@@ -22,14 +22,16 @@ const (
 func ClientMain(monitor *core.Monitor) {
 	fmt.Println("Client started")
 	go func() {
+		var currentMousePos, previousMousePos core.Vec2
 		for {
-			x, y := robotgo.Location()
+			currentMousePos.X, currentMousePos.Y = robotgo.Location()
 			totalWidth, totalHeight := core.CalcWidthHeight(monitor)
 			workDisplayNum := core.GetWorkDisplay(monitor)
-			keepGoing := core.DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
+			keepGoing := core.DetectKeepGoing(currentMousePos, previousMousePos, monitor.Settings, &monitor.Displays[workDisplayNum], totalWidth, totalHeight)
 			if keepGoing {
 				monitor.PeerConn.Write([]byte("keepGoing"))
 			}
+			previousMousePos = currentMousePos
 			time.Sleep(1000 * time.Millisecond)
 		}
 	}()
@@ -105,12 +107,12 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 		scaleY := 1.0
 
 		// 화면 크기에 비례하여 마우스 이동 스케일링
-		if len(monitor.Displays) > 0 && monitor.ServerDisplayInfo != nil {
-			if monitor.ServerDisplayInfo.W > 0 && monitor.Displays[0].W > 0 {
-				scaleX = float64(monitor.ServerDisplayInfo.W) / float64(monitor.Displays[0].W)
+		if len(monitor.Displays) > 0 && monitor.PeerDisplayInfo != nil {
+			if monitor.PeerDisplayInfo.W > 0 && monitor.Displays[0].W > 0 {
+				scaleX = float64(monitor.PeerDisplayInfo.W) / float64(monitor.Displays[0].W)
 			}
-			if monitor.ServerDisplayInfo.H > 0 && monitor.Displays[0].H > 0 {
-				scaleY = float64(monitor.ServerDisplayInfo.H) / float64(monitor.Displays[0].H)
+			if monitor.PeerDisplayInfo.H > 0 && monitor.Displays[0].H > 0 {
+				scaleY = float64(monitor.PeerDisplayInfo.H) / float64(monitor.Displays[0].H)
 			}
 		}
 
@@ -168,6 +170,8 @@ func procHookedEvent(monitor *core.Monitor, event *hook.Event, prevMousePos *cor
 			robotgo.MouseUp("middle")
 		}
 	case hook.MouseWheel:
+		fmt.Printf("Mouse wheel moved: %d, %d\n", event.X, event.Y)
+		robotgo.Scroll(int(event.X), int(event.Y))
 	case hook.KeyDown:
 		fmt.Printf("Key %d pressed\n", event.Rawcode)
 		robotgo.KeyDown(hook.RawcodetoKeychar(event.Rawcode))

@@ -34,12 +34,11 @@ func main() {
 			return
 		}
 	}
-	settings.PeerScreenLoc = core.Right // TODO: get from user
+	settings.PeerScreenDir = core.Right // TODO: get from user
 
 	myMonitor := core.Monitor{
 		Settings: settings,
 		Displays: displays,
-		MouseObj: core.MouseObject{},
 	}
 	if args.PeerAddr == "" {
 		args.PeerAddr = "0.0.0.0:50310"
@@ -97,7 +96,7 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 				return nil
 			}
 
-			peerMonitor := core.Monitor{}
+			var peerMonitor core.Monitor
 			err = json.Unmarshal(peerMonitorBuffer[:r], &peerMonitor)
 			if err != nil {
 				fmt.Println("클라이언트 Monitor JSON 변환 오류:", err)
@@ -110,7 +109,7 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 			if peerMonitor.Displays != nil && len(peerMonitor.Displays) > 0 {
 				fmt.Printf("[server] 클라이언트 디스플레이 정보: %+v\n", peerMonitor.Displays[0])
 				// ServerDisplayInfo 필드를 클라이언트의 기본 디스플레이 정보로 설정
-				myMonitor.ServerDisplayInfo = &peerMonitor.Displays[0]
+				myMonitor.PeerDisplayInfo = &peerMonitor.Displays[0]
 			}
 		}
 		fmt.Println("키보드와 마우스 캡처를 시작합니다...")
@@ -137,7 +136,7 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 			return nil
 		}
 
-		peerMonitor := core.Monitor{}
+		var peerMonitor core.Monitor
 		err = json.Unmarshal(peerMonitorBuffer[:r], &peerMonitor)
 		if err != nil {
 			fmt.Println("서버 Monitor JSON 변환 오류:", err)
@@ -147,21 +146,21 @@ func StartCapture(mode string, myMonitor *core.Monitor, peerAddress string) (sto
 
 		// 서버의 설정 정보를 바탕으로 클라이언트의 화면 위치 설정
 		if peerMonitor.Settings != nil {
-			if peerMonitor.Settings.PeerScreenLoc == core.Left {
-				myMonitor.Settings.PeerScreenLoc = core.Right
-			} else if peerMonitor.Settings.PeerScreenLoc == core.Right {
-				myMonitor.Settings.PeerScreenLoc = core.Left
-			} else if peerMonitor.Settings.PeerScreenLoc == core.Top {
-				myMonitor.Settings.PeerScreenLoc = core.Bottom
-			} else if peerMonitor.Settings.PeerScreenLoc == core.Bottom {
-				myMonitor.Settings.PeerScreenLoc = core.Top
+			if peerMonitor.Settings.PeerScreenDir == core.Left {
+				myMonitor.Settings.PeerScreenDir = core.Right
+			} else if peerMonitor.Settings.PeerScreenDir == core.Right {
+				myMonitor.Settings.PeerScreenDir = core.Left
+			} else if peerMonitor.Settings.PeerScreenDir == core.Top {
+				myMonitor.Settings.PeerScreenDir = core.Bottom
+			} else if peerMonitor.Settings.PeerScreenDir == core.Bottom {
+				myMonitor.Settings.PeerScreenDir = core.Top
 			}
 		}
 
 		// 서버의 디스플레이 정보를 클라이언트의 ServerDisplayInfo 필드에 설정
 		if peerMonitor.Displays != nil && len(peerMonitor.Displays) > 0 {
-			myMonitor.ServerDisplayInfo = &peerMonitor.Displays[0]
-			fmt.Printf("[client] 서버 디스플레이 정보 설정: %+v\n", *myMonitor.ServerDisplayInfo)
+			myMonitor.PeerDisplayInfo = &peerMonitor.Displays[0]
+			fmt.Printf("[client] 서버 디스플레이 정보 설정: %+v\n", *myMonitor.PeerDisplayInfo)
 		}
 
 		// 클라이언트의 Monitor 객체 전송

@@ -9,19 +9,20 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
-const PollingRate = 50 * time.Millisecond
+const PollingRate = 60 * time.Millisecond
 
 func ServerMain(monitor *core.Monitor, stopChan <-chan bool) {
 	totalWidth, totalHeight := core.CalcWidthHeight(monitor)
 
 	// 클라이언트로부터 받은 Monitor 객체 저장용 변수
 	var peerMonitor *core.Monitor
-
+	var previousMousePos, currentMousePos core.Vec2
 	for {
 		workDisplayNum := core.GetWorkDisplay(monitor)
-		x, y := robotgo.Location()
-		fmt.Printf("마우스 위치: %d, %d (display %d)\n", x, y, workDisplayNum)
-		keepGoing := core.DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
+		currentMousePos.X, currentMousePos.Y = robotgo.Location()
+		// x, y := robotgo.Location()
+		fmt.Printf("마우스 위치: %d, %d (display %d)\n", currentMousePos.X, currentMousePos.Y, workDisplayNum)
+		keepGoing := core.DetectKeepGoing(currentMousePos, previousMousePos, monitor.Settings, &monitor.Displays[workDisplayNum], totalWidth, totalHeight)
 		if keepGoing && !core.DEBUG {
 			fmt.Printf("keepGoing\n")
 			// start hooking
@@ -133,8 +134,7 @@ func ServerMain(monitor *core.Monitor, stopChan <-chan bool) {
 				}
 			}
 		}
-		monitor.MouseObj.PreviousMousePos.X = x
-		monitor.MouseObj.PreviousMousePos.Y = y
+		previousMousePos = currentMousePos
 		time.Sleep(PollingRate)
 	}
 }
