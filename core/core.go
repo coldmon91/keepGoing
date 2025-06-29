@@ -56,7 +56,7 @@ func (s *Settings) String() string {
 	return fmt.Sprintf("Mode: %s, ScreenLoc: %d", s.Mode, s.PeerScreenLoc)
 }
 
-func DetectKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, totalHeight, workDisplayNum int) bool {
+func IsKeepGoing(x, y int /*mouse pos*/, monitor *Monitor, totalWidth, totalHeight, workDisplayNum int) bool {
 
 	settings := monitor.Settings
 	mouseObj := monitor.MouseObj
@@ -175,6 +175,7 @@ func CalcWidthHeight(monitor *Monitor) (int, int) {
 	}
 	return totalWidth, totalHeight
 }
+
 func GetWorkDisplay(monitor *Monitor) int {
 	x, y := robotgo.Location()
 	for _, display := range monitor.Displays {
@@ -187,66 +188,75 @@ func GetWorkDisplay(monitor *Monitor) int {
 	return -1
 }
 
+func clientHandler(monitor *Monitor, keepGoingChan chan bool) {
+	readMsg := make([]byte, BufferSize)
+	for {
+		// receive message from client
+		r, err := monitor.PeerConn.Read(readMsg)
+		if err != nil {
+			fmt.Println("연결 읽기 오류:", err)
+			return
+		}
+		if r == 0 {
+			fmt.Println("연결이 종료되었습니다.")
+			return
+		}
+		fmt.Printf("[server] %d bytes 읽음\n", r)
+		if string(readMsg) == "keepGoing" {
+			fmt.Println("keepGoing from client")
+			keepGoingChan <- true
+			return
+		}
+	}
+}
+
+func keepGoing(monitor *Monitor, stopChan <-chan bool) {
+	keepGoing := true
+	// TODO: recv client's display info and sync with client's mouse position here
+	examplePeerDisplayInfo := &DisplayInfo{
+		Id: 0,
+		Min: Vec2{
+			X: 0,
+			Y: 0,
+		},
+		W: 1920,
+		H: 1080,
+	}
+	hookChannel := make(chan []byte)
+	go startHooking(monitor, examplePeerDisplayInfo, hookChannel)
+
+	keepGoingChan := make(chan bool)
+	go clientHandler(monitor, keepGoingChan)
+
+	// signal handling for graceful shutdown
+	for keepGoing {
+		select {
+		case msg := <-hookChannel:
+			_, err := monitor.PeerConn.Write(msg)
+			if err != nil {
+				fmt.Println("메시지 전송 오류:", err)
+				return
+			}
+		case <-keepGoingChan:
+			keepGoing = false
+			fmt.Println("keepGoing from client")
+		case <-stopChan:
+			fmt.Println("stopChan 수신")
+			return
+		}
+	}
+}
+
 func CaptureMouse(monitor *Monitor, stopChan <-chan bool) {
 	totalWidth, totalHeight := CalcWidthHeight(monitor)
 	for {
 		workDisplayNum := GetWorkDisplay(monitor)
 		x, y := robotgo.Location()
 		fmt.Printf("마우스 위치: %d, %d (display %d)\n", x, y, workDisplayNum)
-		keepGoing := DetectKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
-		if keepGoing && !DEBUG {
+		isKeepGoing := IsKeepGoing(x, y, monitor, totalWidth, totalHeight, workDisplayNum)
+		if isKeepGoing && !DEBUG {
 			fmt.Printf("keepGoing\n")
-			// start hooking
-			readMsg := make([]byte, BufferSize)
-			hookChannel := make(chan []byte)
-			// TODO: recv client's display info and sync with client's mouse position here
-			examplePeerDisplayInfo := &DisplayInfo{
-				Id: 0,
-				Min: Vec2{
-					X: 0,
-					Y: 0,
-				},
-				W: 1920,
-				H: 1080,
-			}
-			go startHooking(monitor, examplePeerDisplayInfo, hookChannel)
-			keepGoingChan := make(chan bool)
-			go func() { // waitting for message from client
-				for {
-					// receive message from client
-					r, err := monitor.PeerConn.Read(readMsg)
-					if err != nil {
-						fmt.Println("연결 읽기 오류:", err)
-						return
-					}
-					if r == 0 {
-						fmt.Println("연결이 종료되었습니다.")
-						return
-					}
-					fmt.Printf("[server] %d bytes 읽음\n", r)
-					if string(readMsg) == "keepGoing" {
-						fmt.Println("keepGoing from client")
-						keepGoingChan <- true
-						return
-					}
-				}
-			}()
-			for keepGoing {
-				select {
-				case msg := <-hookChannel:
-					_, err := monitor.PeerConn.Write(msg)
-					if err != nil {
-						fmt.Println("메시지 전송 오류:", err)
-						return
-					}
-				case <-keepGoingChan:
-					keepGoing = false
-					fmt.Println("keepGoing from client")
-				case <-stopChan:
-					fmt.Println("stopChan 수신")
-					return
-				}
-			}
+			go keepGoing(monitor, stopChan)
 		}
 		monitor.MouseObj.PreviousMousePos.X = x
 		monitor.MouseObj.PreviousMousePos.Y = y
